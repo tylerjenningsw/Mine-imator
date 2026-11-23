@@ -4,7 +4,7 @@ function app_event_game_end()
 {
 	if (automation_active)
 		return automation_event_game_end()
-	
+
 	if (startup_error)
 		return true
 	

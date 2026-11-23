@@ -37,7 +37,7 @@ function app_event_step()
 			automation_update()
 			return 0
 		}
-		
+
 		if (window_state = "new_assets" || window_state = "export_movie" || window_state = "export_image")
 			return 0
 		

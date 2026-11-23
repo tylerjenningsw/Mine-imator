@@ -10,7 +10,7 @@ function question(text)
 		log("Automation declined question", text)
 		return false
 	}
-	
+
 	window_set_caption("Mine-imator")
 	answer = show_question(text)
 	window_set_caption("")
