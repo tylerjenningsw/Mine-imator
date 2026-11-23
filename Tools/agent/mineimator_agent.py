@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import os
 import shutil
 import signal
@@ -69,6 +70,9 @@ def run_job(job_path, command, timeout, keep_work=False):
     Returns (exit_code, result_dict). A result is always returned, even when the
     app hangs, crashes or exits without writing one.
     """
+    if not math.isfinite(timeout) or timeout <= 0:
+        return EXIT_USAGE, _error_result("INVALID_REQUEST", "Timeout must be finite and positive")
+
     job_path = Path(job_path).resolve()
     if not job_path.is_file():
         return EXIT_USAGE, _error_result("INVALID_REQUEST", f"Job file not found: {job_path}")
@@ -179,8 +183,8 @@ def main(argv=None):
         parser.error("--exe is required when MINEIMATOR_EXE is not set")
     if not Path(args.exe).is_file():
         parser.error(f"executable not found: {args.exe}")
-    if args.timeout <= 0:
-        parser.error("--timeout must be positive")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        parser.error("--timeout must be finite and positive")
 
     code, result = run_job(args.job, [str(Path(args.exe).resolve())], args.timeout, args.keep_work)
     json.dump(result, sys.stdout, indent=2)

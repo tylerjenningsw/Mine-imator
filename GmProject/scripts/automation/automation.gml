@@ -23,6 +23,24 @@ function automation_surface_save(surf, fn)
 	return file_exists(fn)
 }
 
+/// CppSeparate StringType automation_path_canonical(StringType)
+function automation_path_canonical(path)
+{
+	return path
+}
+
+/// CppSeparate StringType automation_stage_create(StringType, BoolType)
+function automation_stage_create(destination, directory)
+{
+	return ""
+}
+
+/// CppSeparate BoolType automation_publish(StringType, StringType, BoolType)
+function automation_publish(staged, destination, overwrite)
+{
+	return false
+}
+
 function automation_startup()
 {
 	globalvar automation_active, automation_stage, automation_job_path, automation_job, automation_types, automation_steps;
@@ -196,6 +214,7 @@ function automation_write_result()
 		log("Automation could not write result", automation_result_file())
 }
 
+/// CppSeparate StringType automation_json_string(StringType)
 function automation_json_string(str)
 {
 	return "\"" + json_string_encode(str) + "\""
@@ -304,8 +323,8 @@ function automation_path_resolve(path)
 {
 	var clean = automation_path_clean(path);
 	if (automation_path_is_absolute(clean))
-		return clean
-	return automation_path_clean(filename_dir(automation_job_path)) + "/" + clean
+		return automation_path_canonical(clean)
+	return automation_path_canonical(automation_path_clean(filename_dir(automation_job_path)) + "/" + clean)
 }
 
 function automation_path_has_parent_segment(path)
@@ -341,9 +360,15 @@ function automation_relative_valid(path)
 
 function automation_path_inside(path, dir)
 {
-	path = string_lower(path)
-	dir = string_lower(dir)
-	return (path = dir || string_copy(path, 1, string_length(dir) + 1) = dir + "/")
+	path = string_lower(automation_path_canonical(path))
+	dir = string_lower(automation_path_canonical(dir))
+	if (path = "" || dir = "")
+		return false
+	if (path = dir)
+		return true
+	if (string_char_at(dir, string_length(dir)) != "/")
+		dir += "/"
+	return (string_copy(path, 1, string_length(dir)) = dir)
 }
 
 function automation_claim_output(map, key, ext, where)
@@ -358,7 +383,9 @@ function automation_claim_output(map, key, ext, where)
 	if (ext != "" && string_lower(filename_ext(rel)) != ext)
 		return automation_fail("INVALID_REQUEST", "Output path \"" + rel + "\" in " + where + " must end with " + ext)
 
-	var path = automation_output_dir + "/" + rel;
+	var path = automation_path_canonical(automation_output_dir + "/" + rel);
+	if (path = "" || !automation_path_inside(path, automation_output_dir))
+		return automation_fail("INVALID_REQUEST", "Output path resolves outside outputDirectory")
 
 	for (var i = 0; i < ds_list_size(automation_claims); i++)
 		if (automation_path_inside(path, automation_claims[|i]) || automation_path_inside(automation_claims[|i], path))
@@ -369,8 +396,8 @@ function automation_claim_output(map, key, ext, where)
 		(automation_open_file != "" && automation_path_inside(automation_open_file, path)))
 		return automation_fail("INVALID_REQUEST", "Output path \"" + rel + "\" in " + where + " collides with the job, result, input or temporary files")
 
-	if (!automation_overwrite && file_exists_lib(path))
-		return automation_fail("OUTPUT_EXISTS", "Output \"" + path + "\" already exists and overwrite is false")
+	if ((!automation_overwrite || ext = "") && file_exists_lib(path))
+		return automation_fail("OUTPUT_EXISTS", "Output \"" + path + "\" already exists")
 
 	map[?key] = rel
 	ds_list_add(automation_claims, path)
@@ -467,6 +494,8 @@ function automation_begin()
 	if (automation_path_has_parent_segment(automation_path_clean(job[?"outputDirectory"])))
 		return automation_fail("INVALID_REQUEST", "outputDirectory must not contain \"..\"")
 	automation_output_dir = automation_path_resolve(job[?"outputDirectory"])
+	if (automation_output_dir = "")
+		return automation_fail("INVALID_REQUEST", "outputDirectory could not be resolved")
 
 	if (automation_json_type(job, "steps") != e_json_type.ARRAY)
 		return automation_fail("INVALID_REQUEST", "Field \"steps\" must be an array")
@@ -962,6 +991,7 @@ function automation_refresh(frame)
 	timeline_marker_previous = -1
 	render_samples = -1
 	app_update_animate()
+	app_update_animate()
 }
 
 function automation_run_step(step)
@@ -1310,7 +1340,6 @@ function automation_save(rel)
 {
 	var path, staged;
 	path = automation_output_dir + "/" + string(rel)
-	staged = filename_dir(path) + "/." + filename_name(path) + ".partial"
 
 	if (!automation_overwrite && file_exists_lib(path))
 	{
@@ -1318,8 +1347,12 @@ function automation_save(rel)
 		return ""
 	}
 
-	directory_create_lib(filename_dir(path))
-	file_delete_lib(staged)
+	staged = automation_stage_create(path, false)
+	if (staged = "")
+	{
+		automation_fail("OUTPUT_WRITE_FAILED", "Could not create a temporary project file")
+		return ""
+	}
 
 	project_folder = filename_dir(path)
 	project_file = path
@@ -1331,7 +1364,7 @@ function automation_save(rel)
 	if (ds_map_valid(map))
 		ds_map_destroy(map)
 
-	if (!valid || !file_rename_lib(staged, path) || !file_exists_lib(path) || file_exists_lib(staged))
+	if (!valid || !automation_publish(staged, path, automation_overwrite) || !file_exists_lib(path) || file_exists_lib(staged))
 	{
 		file_delete_lib(staged)
 		automation_fail("OUTPUT_WRITE_FAILED", "Could not write or verify project " + path)
@@ -1393,13 +1426,11 @@ function automation_render_sequence(step)
 
 	if (automation_frame = 0)
 	{
-		if (!automation_overwrite && file_exists_lib(path))
+		if (file_exists_lib(path))
 			return automation_fail("OUTPUT_EXISTS", "Output \"" + path + "\" already exists")
 
-		automation_staged = filename_dir(path) + "/." + filename_name(path) + ".partial"
-		if (file_exists_lib(automation_staged))
-			directory_delete_lib(automation_staged)
-		if (!directory_create_lib(automation_staged))
+		automation_staged = automation_stage_create(path, true)
+		if (automation_staged = "")
 			return automation_fail("OUTPUT_WRITE_FAILED", "Could not create " + automation_staged)
 		ds_list_clear(automation_sequence_files)
 	}
@@ -1418,7 +1449,7 @@ function automation_render_sequence(step)
 	if (automation_frame < step[?"count"])
 		return true
 
-	if (!file_rename_lib(automation_staged, path) || !file_exists_lib(path + "/" + file))
+	if (!automation_publish(automation_staged, path, false) || !file_exists_lib(path + "/" + file))
 		return automation_fail("OUTPUT_WRITE_FAILED", "Could not publish sequence " + path)
 	automation_staged = ""
 

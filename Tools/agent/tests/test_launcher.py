@@ -117,6 +117,13 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(code, agent.EXIT_USAGE)
         self.assertEqual(result["error"]["code"], "INVALID_REQUEST")
 
+    def test_invalid_timeout_returns_usage_error_before_starting(self):
+        for timeout in (float("nan"), float("inf"), float("-inf"), 0, -1):
+            with self.subTest(timeout=timeout):
+                code, result = agent.run_job(self.job("ok"), FAKE_APP, timeout)
+                self.assertEqual(code, agent.EXIT_USAGE)
+                self.assertEqual(result["error"]["code"], "INVALID_REQUEST")
+
     def test_unstartable_executable(self):
         code, result = agent.run_job(self.job("ok"), [str(Path(self.dir.name) / "missing.exe")], 5)
         self.assertEqual(code, agent.EXIT_USAGE)
@@ -142,6 +149,13 @@ class CliTest(unittest.TestCase):
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             agent.main(["--help"])
         self.assertIn("Exit codes", out.getvalue())
+
+    def test_nonfinite_timeout_is_rejected_by_cli(self):
+        for timeout in ("nan", "inf"):
+            with self.subTest(timeout=timeout):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                    agent.main(["run", "job.json", "--exe", sys.executable, "--timeout", timeout])
+                self.assertEqual(raised.exception.code, 2)
 
 
 class PngDecodeTest(unittest.TestCase):

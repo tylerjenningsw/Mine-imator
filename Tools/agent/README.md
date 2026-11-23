@@ -39,7 +39,7 @@ The app window opens while the job runs. Rendering needs a graphics device, so t
 ```
 
 - `outputDirectory` is absolute or relative to the job file. Every output path in a step is relative to it.
-- `overwrite: false` (default) fails with `OUTPUT_EXISTS` when an output already exists.
+- `overwrite: false` (default) fails with `OUTPUT_EXISTS` when an output already exists. Sequence directories must always be new, including when `overwrite` is true.
 - `project.mode` is `new` or `open`. `open` takes `path`, a current-format `.miproject`. The app loads a working copy and never writes the input file.
 - Unknown fields, wrong types, non-integer frames and out-of-range numbers fail with `INVALID_REQUEST` before the scene changes.
 
@@ -87,7 +87,7 @@ The launcher sets `MINEIMATOR_AUTOMATION_JOB` and `MINEIMATOR_AUTOMATION_RESULT`
 - Closes dialogs without showing them and reports errors in the result, including fatal errors.
 - Ignores keyboard shortcuts, playback, autosave backups and object placement.
 
-The app refuses to start (exit code 3) when the result file already exists, so a leaked environment variable cannot rerun a job.
+The app refuses to start (exit code 3) when the result file or its work directory already exists, so a leaked environment variable cannot rerun a job.
 
 Replays are compared by `inspect` output for the same job, app version, assets and seed, not by project bytes or pixels.
 
@@ -99,3 +99,5 @@ Movie export, high-quality renders, world import, custom skins, packs and models
 
 - `python -m unittest discover -s Tools/agent/tests` runs the launcher tests with a stand-in app.
 - `python Tools/agent/tests/integration_check.py --exe path/to/Mine-imator.exe` runs real jobs against a built app and checks results, the project round trip and decoded PNGs.
+
+The integration check keeps its jobs, results and PNGs in the printed directory for visual inspection.

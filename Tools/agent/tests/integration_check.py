@@ -8,7 +8,6 @@ these checks prove files, sizes, frame mapping and pixel changes, not that the p
 
 import argparse
 import json
-import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -30,11 +29,11 @@ def check(name, ok, detail=""):
     return ok
 
 
-def run(exe, root, name, steps, project=None, overwrite=False, timeout=600):
+def run(exe, root, name, steps, project=None, overwrite=False, timeout=600, output_directory=None):
     job = {
         "schema": "mineimator.job/1",
         "id": name,
-        "outputDirectory": str(root / name),
+        "outputDirectory": str(output_directory if output_directory is not None else root / name),
         "overwrite": overwrite,
         "project": project or {"mode": "new", "tempo": 24, "width": 320, "height": 180, "seed": 7},
         "steps": steps,
@@ -157,6 +156,82 @@ def check_reopen(exe, root, scene):
     check("open never writes the input project", Path(saved).read_bytes() == original)
 
 
+def check_output_isolation(exe, root, scene):
+    saved = Path(artifacts(scene, "project")[0]["path"])
+    original = saved.read_bytes()
+    code, result = run(
+        exe, root, "input-alias", [{"op": "save", "path": saved.name}],
+        project={"mode": "open", "path": str(saved)}, overwrite=True,
+        output_directory=str(saved.parent) + "/.",
+    )
+    check("aliased output cannot replace input", code == agent.EXIT_JOB_ERROR and result.get("error", {}).get("code") == "INVALID_REQUEST", result.get("error"))
+    check("aliased input remains unchanged", saved.read_bytes() == original)
+
+    output = root / "staging-isolation"
+    output.mkdir()
+    stale_project = output / ".scene.miproject.partial"
+    stale_project.write_bytes(b"keep project staging")
+    stale_sequence = output / ".frames.partial"
+    stale_sequence.mkdir()
+    sentinel = stale_sequence / "keep.txt"
+    sentinel.write_bytes(b"keep sequence staging")
+    code, result = run(exe, root, "staging-isolation", [
+        {"op": "create", "id": "cam", "kind": "camera"},
+        {"op": "save", "path": "scene.miproject"},
+        {"op": "render.sequence", "camera": "cam", "start": 0, "count": 1, "fps": 24, "path": "frames"},
+    ])
+    check("job uses fresh staging paths", code == agent.EXIT_OK, result.get("error"))
+    check("preexisting project staging is untouched", stale_project.is_file() and stale_project.read_bytes() == b"keep project staging")
+    check("preexisting sequence staging is untouched", sentinel.is_file() and sentinel.read_bytes() == b"keep sequence staging")
+
+    frames = output / "frames"
+    if frames.is_dir():
+        existing = frames / "keep.txt"
+        existing.write_bytes(b"keep published sequence")
+        code, result = run(exe, root, "sequence-no-replace", [
+            {"op": "create", "id": "cam", "kind": "camera"},
+            {"op": "render.sequence", "camera": "cam", "start": 0, "count": 1, "fps": 24, "path": "frames"},
+        ], overwrite=True, output_directory=output)
+        check("sequence directory is never replaced", code == agent.EXIT_JOB_ERROR and result.get("error", {}).get("code") == "OUTPUT_EXISTS", result.get("error"))
+        check("existing sequence is untouched", existing.is_file() and existing.read_bytes() == b"keep published sequence")
+
+    linked_output = root / "linked-output"
+    linked_output.mkdir()
+    link = linked_output / "source"
+    try:
+        link.symlink_to(saved.parent, target_is_directory=True)
+    except (OSError, NotImplementedError) as e:
+        print("SKIP symlink output containment:", e)
+    else:
+        code, result = run(
+            exe, root, "symlink-output", [{"op": "save", "path": "source/" + saved.name}],
+            overwrite=True, output_directory=linked_output,
+        )
+        check("symlink cannot escape outputDirectory", code == agent.EXIT_JOB_ERROR and result.get("error", {}).get("code") == "INVALID_REQUEST", result.get("error"))
+        check("symlink target remains unchanged", saved.read_bytes() == original)
+
+
+def check_light_frame_order(exe, root):
+    steps = [
+        {"op": "create", "id": "box", "kind": "cube"},
+        {"op": "create", "id": "lamp", "kind": "point_light"},
+        {"op": "create", "id": "cam", "kind": "camera"},
+        {"op": "keyframe.set", "target": "cam", "frame": 0, "values": {"POS_Z": 8, "CAM_ROTATE": True, "CAM_ROTATE_DISTANCE": 80, "CAM_ROTATE_ANGLE_XY": 0, "CAM_ROTATE_ANGLE_Z": 20}},
+        {"op": "keyframe.set", "target": "lamp", "frame": 0, "values": {"POS_X": -48, "POS_Y": -32, "POS_Z": 24, "LIGHT_RANGE": 200, "LIGHT_STRENGTH": 5}, "transition": "linear"},
+        {"op": "keyframe.set", "target": "lamp", "frame": 24, "values": {"POS_X": 48}},
+        {"op": "render.image", "camera": "cam", "frame": 0, "path": "a-first.png"},
+        {"op": "render.image", "camera": "cam", "frame": 24, "path": "b.png"},
+        {"op": "render.image", "camera": "cam", "frame": 0, "path": "a-again.png"},
+    ]
+    code, result = run(exe, root, "light-frame-order", steps)
+    if not check("moving light job ok", code == agent.EXIT_OK, result.get("error")):
+        return
+    decoded = [check_png("moving light " + Path(a["path"]).name, a["path"], (320, 180)) for a in artifacts(result, "image")]
+    if len(decoded) == 3 and all(decoded):
+        check("light frame A is independent of previous capture", decoded[0] == decoded[2])
+        check("moving light changes pixels", pngdecode.difference(decoded[0], decoded[1]) > 0.001)
+
+
 def check_errors(exe, root):
     existing = root / "errors-exists"
     existing.mkdir(exist_ok=True)
@@ -172,6 +247,7 @@ def check_errors(exe, root):
         ("errors-nonnumber", [cam, {"op": "keyframe.set", "target": "cam", "frame": 1, "values": {"POS_X": "far"}}], None, "INVALID_REQUEST"),
         ("errors-duplicate", [cam, cam], None, "DUPLICATE_ID"),
         ("errors-asset", [{"op": "create", "id": "a", "kind": "character", "asset": "no_such_mob"}], None, "ASSET_NOT_FOUND"),
+        ("errors-control-character", [{"op": "create", "id": "a", "kind": "character", "asset": "missing\rasset"}], None, "ASSET_NOT_FOUND"),
         ("errors-part", [{"op": "create", "id": "a", "kind": "character", "asset": "human"}, {"op": "keyframe.set", "target": "a/tail", "frame": 0, "values": {"ROT_X": 1}}], None, "OBJECT_NOT_FOUND"),
         ("errors-forward", [{"op": "keyframe.set", "target": "cam", "frame": 0, "values": {"POS_X": 1}}, cam], None, "OBJECT_NOT_FOUND"),
         ("errors-value-kind", [cam, {"op": "keyframe.set", "target": "cam", "frame": 0, "values": {"SCA_X": 2}}], None, "UNSUPPORTED"),
@@ -208,13 +284,14 @@ def main():
     scene = check_scene(exe, root)
     if scene:
         check_reopen(exe, root, scene)
+        check_output_isolation(exe, root, scene)
+    check_light_frame_order(exe, root)
     check_errors(exe, root)
     for path, mtime in watched.items():
         check(f"{path.name} in the install is untouched", path.stat().st_mtime_ns == mtime)
 
     print(f"{len(failures)} failed" if failures else "All checks passed")
-    if not args.keep and not failures:
-        shutil.rmtree(root, ignore_errors=True)
+    print("Jobs, results and PNGs retained in", root)
     return 1 if failures else 0
 
 
