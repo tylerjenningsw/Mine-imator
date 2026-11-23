@@ -1334,6 +1334,7 @@
     {"id":{"name":"app_mouse_clear","path":"scripts/app_mouse_clear/app_mouse_clear.yy",},"order":41,},
     {"id":{"name":"app_startup","path":"scripts/app_startup/app_startup.yy",},"order":43,},
     {"id":{"name":"app_startup_lists","path":"scripts/app_startup_lists/app_startup_lists.yy",},"order":45,},
+    {"id":{"name":"automation","path":"scripts/automation/automation.yy",},"order":53,},
     {"id":{"name":"action_bench_shape_tex_material","path":"scripts/action_bench_shape_tex_material/action_bench_shape_tex_material.yy",},"order":10,},
     {"id":{"name":"new_transition_texture_map","path":"scripts/new_transition_texture_map/new_transition_texture_map.yy",},"order":47,},
     {"id":{"name":"app_mouse_wrap","path":"scripts/app_mouse_wrap/app_mouse_wrap.yy",},"order":51,},

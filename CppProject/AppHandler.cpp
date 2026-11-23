@@ -1,5 +1,6 @@
 #include "AppHandler.hpp"
 #include "AppWindow.hpp"
+#include "Automation.hpp"
 
 #include "Asset/Font.hpp"
 #include "Asset/Shader.hpp"
@@ -44,6 +45,8 @@ namespace CppProject
 	{
 		try
 		{
+			Automation::Init();
+
 			// Disable DPI scaling
 			QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
 
@@ -62,7 +65,10 @@ namespace CppProject
 			// Set paths
 			QDir().mkpath(user_directory_get());
 			QDir().mkpath(projects_directory_get());
-			file_delete_lib(log_file);
+			if (Automation::Active())
+				QFile::remove(Automation::LogFile());
+			else
+				file_delete_lib(log_file);
 
 		#if RELEASE_MODE
 			gmlGlobal::working_directory = QCoreApplication::applicationDirPath() + "/";
@@ -98,6 +104,8 @@ namespace CppProject
 		#else
 			gmlGlobal::game_save_id = QDir::tempPath() + "/" + StringType(PROJECT_NAME) + "_tmp/";
 		#endif
+			if (Automation::Active())
+				gmlGlobal::game_save_id = Automation::WorkDirectory() + "tmp/";
 			if (QDir(gmlGlobal::game_save_id).exists())
 				DEBUG("Found temporary folder " + gmlGlobal::game_save_id);
 			else if (QDir().mkdir(gmlGlobal::game_save_id))
@@ -198,7 +206,8 @@ namespace CppProject
 		}
 		catch (const QString& ex)
 		{
-			new ErrorDialog(ex);
+			if (!Automation::ReportFatal(ex))
+				new ErrorDialog(ex);
 			qApp->exit(1);
 		}
 	}
@@ -352,7 +361,8 @@ namespace CppProject
 			}
 			catch (const QString& ex)
 			{
-				new ErrorDialog(ex);
+				if (!Automation::ReportFatal(ex))
+					new ErrorDialog(ex);
 				qApp->exit(1);
 			}
 
@@ -432,6 +442,13 @@ namespace CppProject
 
 	int AppHandler::ExecDialog(QDialog* dialog)
 	{
+		if (Automation::Active())
+		{
+			QMessageBox* message = qobject_cast<QMessageBox*>(dialog);
+			WARNING("Automation suppressed dialog: " + (message ? message->text() : dialog->windowTitle()));
+			return QDialog::Rejected;
+		}
+
 		GFX->SubmitBatch();
 
 		// Clear keys
