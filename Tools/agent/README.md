@@ -74,7 +74,7 @@ A new camera starts at the editor's work camera, so set its position and rotatio
 
 Renders use shaded quality, the camera you name and that camera's size settings, or the project size. `render.sequence` writes `count` files `frame_000000.png` and up. File `i` shows timeline frame `start + i * tempo / fps`, which the artifact lists per file. Trial installs keep the watermark. Artifacts report `watermark`.
 
-Each image is written to a temporary file, checked by reading it back, then moved into place. A sequence directory appears only after every frame is saved. A project file appears only after the app parses it back. An error result lists only artifacts that were completed.
+Each image is written to a temporary file, checked by reading it back, then moved into place. A sequence directory appears only after every frame is saved. A project file appears only after the app parses it back. An error result lists only artifacts that were completed. A job stopped by timeout or Ctrl+C can leave a hidden `.mineimator-*` staging file or directory next to an output. It never appears under the output name and is safe to delete.
 
 ## Errors
 

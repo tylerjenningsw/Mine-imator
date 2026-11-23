@@ -80,7 +80,7 @@ def run_job(job_path, command, timeout, keep_work=False):
     """Run one job with `command` (the app executable plus arguments).
 
     Returns (exit_code, result_dict). A result is always returned, even when the
-    app hangs, crashes or exits without writing one.
+    app hangs, crashes, is cancelled with Ctrl+C or exits without writing one.
     """
     if not math.isfinite(timeout) or timeout <= 0:
         return EXIT_USAGE, _error_result("INVALID_REQUEST", "Timeout must be finite and positive")
@@ -100,6 +100,7 @@ def run_job(job_path, command, timeout, keep_work=False):
 
     exe = Path(command[0])
     timed_out = False
+    cancelled = False
     with open(stderr_path, "wb") as stderr:
         try:
             proc = subprocess.Popen(
@@ -127,6 +128,10 @@ def run_job(job_path, command, timeout, keep_work=False):
                         returncode = proc.returncode
                         timed_out = True
                         break
+        except KeyboardInterrupt:
+            _kill_tree(proc)
+            returncode = proc.returncode
+            cancelled = True
         except BaseException:
             _kill_tree(proc)
             raise
@@ -141,7 +146,10 @@ def run_job(job_path, command, timeout, keep_work=False):
         except (OSError, ValueError) as e:
             result = _error_result("INVALID_RESULT", f"Could not read result: {e}", _job_id(job_path))
 
-    if result is None and timed_out:
+    if cancelled:
+        code = EXIT_CANCELLED
+        result = _error_result("CANCELLED", "Cancelled; the app was stopped", _job_id(job_path))
+    elif result is None and timed_out:
         code = EXIT_TIMEOUT
         result = _error_result("TIMEOUT", f"Job did not finish within {timeout} seconds; the app was stopped", _job_id(job_path))
     elif result is None:
@@ -213,10 +221,7 @@ def main(argv=None):
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("--timeout must be finite and positive")
 
-    try:
-        code, result = run_job(args.job, [str(Path(args.exe).resolve())], args.timeout, args.keep_work)
-    except KeyboardInterrupt:
-        code, result = EXIT_CANCELLED, _error_result("CANCELLED", "Cancelled; the app was stopped", _job_id(args.job))
+    code, result = run_job(args.job, [str(Path(args.exe).resolve())], args.timeout, args.keep_work)
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return code

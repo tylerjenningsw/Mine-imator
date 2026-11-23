@@ -123,9 +123,12 @@ class LauncherTest(unittest.TestCase):
 
         threading.Thread(target=interrupt_when_started, daemon=True).start()
         start = time.monotonic()
-        with self.assertRaises(KeyboardInterrupt):
-            agent.run_job(job, FAKE_APP, 60)
+        code, result = agent.run_job(job, FAKE_APP, 60)
         self.assertLess(time.monotonic() - start, 30)
+        self.assertEqual(code, agent.EXIT_CANCELLED)
+        self.assertEqual(result["error"]["code"], "CANCELLED")
+        self.assertIn("mode hang-with-child", result["launcher"]["logTail"])
+        self.assertTrue(Path(result["launcher"]["workDirectory"]).is_dir())
         for pid in (int(app_file.read_text()), int(child_file.read_text())):
             self.assertFalse(pid_alive(pid), pid)
 
