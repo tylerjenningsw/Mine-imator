@@ -358,10 +358,15 @@ function automation_relative_valid(path)
 	return true
 }
 
-function automation_path_inside(path, dir)
+function automation_path_inside(path, dir, foldcase)
 {
-	path = string_lower(automation_path_canonical(path))
-	dir = string_lower(automation_path_canonical(dir))
+	path = automation_path_canonical(path)
+	dir = automation_path_canonical(dir)
+	if (foldcase)
+	{
+		path = string_lower(path)
+		dir = string_lower(dir)
+	}
 	if (path = "" || dir = "")
 		return false
 	if (path = dir)
@@ -384,16 +389,16 @@ function automation_claim_output(map, key, ext, where)
 		return automation_fail("INVALID_REQUEST", "Output path \"" + rel + "\" in " + where + " must end with " + ext)
 
 	var path = automation_path_canonical(automation_output_dir + "/" + rel);
-	if (path = "" || !automation_path_inside(path, automation_output_dir))
+	if (path = "" || !automation_path_inside(path, automation_output_dir, false))
 		return automation_fail("INVALID_REQUEST", "Output path resolves outside outputDirectory")
 
 	for (var i = 0; i < ds_list_size(automation_claims); i++)
-		if (automation_path_inside(path, automation_claims[|i]) || automation_path_inside(automation_claims[|i], path))
+		if (automation_path_inside(path, automation_claims[|i], true) || automation_path_inside(automation_claims[|i], path, true))
 			return automation_fail("INVALID_REQUEST", "Output path \"" + rel + "\" in " + where + " collides with another output")
 
-	if (automation_path_inside(automation_job_path, path) || automation_path_inside(automation_result_file(), path) ||
-		automation_path_inside(path, automation_path_clean(file_directory)) || automation_path_inside(automation_path_clean(file_directory), path) ||
-		(automation_open_file != "" && automation_path_inside(automation_open_file, path)))
+	if (automation_path_inside(automation_job_path, path, true) || automation_path_inside(automation_result_file(), path, true) ||
+		automation_path_inside(path, automation_path_clean(file_directory), true) || automation_path_inside(automation_path_clean(file_directory), path, true) ||
+		(automation_open_file != "" && automation_path_inside(automation_open_file, path, true)))
 		return automation_fail("INVALID_REQUEST", "Output path \"" + rel + "\" in " + where + " collides with the job, result, input or temporary files")
 
 	if ((!automation_overwrite || ext = "") && file_exists_lib(path))
@@ -885,6 +890,12 @@ function automation_check_target(known, target)
 	alias = (slash > 0 ? string_copy(target, 1, slash - 1) : target)
 	part = (slash > 0 ? string_delete(target, 1, slash) : "")
 
+	if (slash > 0 && part = "")
+	{
+		automation_fail("INVALID_REQUEST", "Target \"" + target + "\" must be <id> or <id>/<part>")
+		return null
+	}
+
 	if (!ds_map_exists(known, alias))
 	{
 		automation_fail("OBJECT_NOT_FOUND", "Unknown target \"" + target + "\", create it in an earlier step")
@@ -991,6 +1002,8 @@ function automation_refresh(frame)
 	timeline_marker_previous = -1
 	render_samples = -1
 	app_update_animate()
+
+	// Lights are collected before matrices update, so a second pass reads their new positions
 	app_update_animate()
 }
 

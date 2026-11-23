@@ -8,6 +8,8 @@ these checks prove files, sizes, frame mapping and pixel changes, not that the p
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -211,6 +213,38 @@ def check_output_isolation(exe, root, scene):
         check("symlink target remains unchanged", saved.read_bytes() == original)
 
 
+def case_sensitive_directory(path):
+    path.mkdir()
+    if os.name == "nt":
+        subprocess.run(["fsutil.exe", "file", "setCaseSensitiveInfo", str(path), "enable"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (path / "Out").mkdir()
+    try:
+        (path / "out").mkdir()
+    except FileExistsError:
+        return False
+    return True
+
+
+def check_case_distinct_containment(exe, root):
+    base = root / "case-escape"
+    if not case_sensitive_directory(base):
+        print("SKIP case-distinct containment: no case-sensitive directory available")
+        return
+    victim = base / "out" / "victim.miproject"
+    victim.write_bytes(b"outside outputDirectory")
+    try:
+        (base / "Out" / "link").symlink_to(base / "out", target_is_directory=True)
+    except (OSError, NotImplementedError) as e:
+        print("SKIP case-distinct containment:", e)
+        return
+    code, result = run(
+        exe, root, "case-escape", [{"op": "create", "id": "cam", "kind": "camera"}, {"op": "save", "path": "link/victim.miproject"}],
+        overwrite=True, output_directory=base / "Out",
+    )
+    check("case-distinct symlink cannot escape outputDirectory", code == agent.EXIT_JOB_ERROR and result.get("error", {}).get("code") == "INVALID_REQUEST", result.get("error"))
+    check("file outside outputDirectory is untouched", victim.read_bytes() == b"outside outputDirectory")
+
+
 def check_light_frame_order(exe, root):
     steps = [
         {"op": "create", "id": "box", "kind": "cube"},
@@ -247,6 +281,7 @@ def check_errors(exe, root):
         ("errors-nonnumber", [cam, {"op": "keyframe.set", "target": "cam", "frame": 1, "values": {"POS_X": "far"}}], None, "INVALID_REQUEST"),
         ("errors-duplicate", [cam, cam], None, "DUPLICATE_ID"),
         ("errors-asset", [{"op": "create", "id": "a", "kind": "character", "asset": "no_such_mob"}], None, "ASSET_NOT_FOUND"),
+        ("errors-empty-part", [{"op": "create", "id": "actor", "kind": "cube"}, {"op": "save", "path": "before-error.miproject"}, {"op": "keyframe.set", "target": "actor/", "frame": 0, "values": {"POS_X": 1}}], None, "INVALID_REQUEST"),
         ("errors-control-character", [{"op": "create", "id": "a", "kind": "character", "asset": "missing\rasset"}], None, "ASSET_NOT_FOUND"),
         ("errors-part", [{"op": "create", "id": "a", "kind": "character", "asset": "human"}, {"op": "keyframe.set", "target": "a/tail", "frame": 0, "values": {"ROT_X": 1}}], None, "OBJECT_NOT_FOUND"),
         ("errors-forward", [{"op": "keyframe.set", "target": "cam", "frame": 0, "values": {"POS_X": 1}}, cam], None, "OBJECT_NOT_FOUND"),
@@ -265,6 +300,13 @@ def check_errors(exe, root):
         check(f"{name} returns {expected}", code == agent.EXIT_JOB_ERROR and got == expected, f"exit {code}, {got}: {result.get('error', {}).get('message')}")
         check(f"{name} lists no artifacts", result.get("artifacts") == [], result.get("artifacts"))
     check("existing output is untouched", (existing / "taken.png").read_bytes() == b"keep")
+    check("preflight failure publishes nothing", not (root / "errors-empty-part" / "before-error.miproject").exists())
+
+
+def user_files(exe):
+    data = Path(exe).parent / "Data" if os.name == "nt" else Path.home() / "Mine-imator"
+    paths = [data / name for name in ("settings.midata", "recent.midata", "key.midata", "log.txt")]
+    return {p: p.read_bytes() if p.is_file() else None for p in paths}
 
 
 def main():
@@ -274,8 +316,7 @@ def main():
     args = parser.parse_args()
 
     exe = str(Path(args.exe).resolve())
-    data = Path(exe).parent / "Data"
-    watched = {p: p.stat().st_mtime_ns for p in (data / "settings.midata", data / "recent.midata", data / "log.txt") if p.exists()}
+    before = user_files(exe)
 
     root = Path(args.keep).resolve() if args.keep else Path(tempfile.mkdtemp(prefix="mineimator-integration-"))
     root.mkdir(parents=True, exist_ok=True)
@@ -285,10 +326,11 @@ def main():
     if scene:
         check_reopen(exe, root, scene)
         check_output_isolation(exe, root, scene)
+    check_case_distinct_containment(exe, root)
     check_light_frame_order(exe, root)
     check_errors(exe, root)
-    for path, mtime in watched.items():
-        check(f"{path.name} in the install is untouched", path.stat().st_mtime_ns == mtime)
+    for path, content in user_files(exe).items():
+        check(f"{path.name} in the user data folder is unchanged", content == before[path], "created or modified")
 
     print(f"{len(failures)} failed" if failures else "All checks passed")
     print("Jobs, results and PNGs retained in", root)
