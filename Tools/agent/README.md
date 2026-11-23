@@ -20,6 +20,7 @@ The result JSON goes to stdout. Exit codes:
 | 2 | Job error. Read `error.code`, `error.message` and `error.step` |
 | 3 | Timeout. The app was stopped |
 | 4 | The app crashed, refused the job or wrote no valid result |
+| 130 | Cancelled with Ctrl+C. The app and its child processes were stopped |
 
 On failure the result has a `launcher` object with the app exit code, the work directory and the last lines of the job log.
 
@@ -38,7 +39,7 @@ The app window opens while the job runs. Rendering needs a graphics device, so t
 }
 ```
 
-- `outputDirectory` is absolute or relative to the job file. Every output path in a step is relative to it.
+- `outputDirectory` is absolute or relative to the job file. Every output path in a step is relative to it. Paths are resolved through symbolic links, and a path that ends up outside `outputDirectory` is rejected.
 - `overwrite: false` (default) fails with `OUTPUT_EXISTS` when an output already exists. Sequence directories must always be new, including when `overwrite` is true.
 - `project.mode` is `new` or `open`. `open` takes `path`, a current-format `.miproject`. The app loads a working copy and never writes the input file.
 - Unknown fields, wrong types, non-integer frames and out-of-range numbers fail with `INVALID_REQUEST` before the scene changes.
@@ -57,7 +58,7 @@ Run `catalog` steps to discover names. The lists come from the running app and i
 
 ### Objects and parts
 
-`create.id` is the public name of an object. Use it as `target` and `camera` in later steps. Address a character part as `<id>/<part>`, for example `actor/right_arm`. `catalog` with `kind: "parts"` and the character `asset` lists the part names before you create the character. The `create` result lists them as well.
+`create.id` is the public name of an object. Use it as `target` and `camera` in later steps. Address a character part as `<id>/<part>`, for example `actor/right_arm`. A target ending in `/` is rejected. `catalog` with `kind: "parts"` and the character `asset` lists the part names before you create the character. The `create` result lists them as well.
 
 The app stores the id as the timeline name. When a job opens a project, every root timeline with a unique name made of letters, digits, `_` or `-` gets that name as its id.
 
@@ -77,7 +78,7 @@ Each image is written to a temporary file, checked by reading it back, then move
 
 ## Errors
 
-`INVALID_REQUEST`, `UNSUPPORTED`, `ASSET_NOT_FOUND`, `STARTUP_FAILED`, `ASSETS_UNAVAILABLE`, `PROJECT_LOAD_FAILED`, `OBJECT_NOT_FOUND`, `DUPLICATE_ID`, `CAMERA_REQUIRED`, `RENDER_FAILED`, `OUTPUT_EXISTS`, `OUTPUT_WRITE_FAILED`, `CANCELLED`, `FATAL`, `INTERNAL`. The launcher adds `TIMEOUT`, `NO_RESULT` and `INVALID_RESULT`, and `STARTUP_FAILED` when the executable cannot start. When the app reported its own error message key, the result has `error.appError`.
+`INVALID_REQUEST`, `UNSUPPORTED`, `ASSET_NOT_FOUND`, `STARTUP_FAILED`, `ASSETS_UNAVAILABLE`, `PROJECT_LOAD_FAILED`, `OBJECT_NOT_FOUND`, `DUPLICATE_ID`, `CAMERA_REQUIRED`, `RENDER_FAILED`, `OUTPUT_EXISTS`, `OUTPUT_WRITE_FAILED`, `CANCELLED`, `FATAL`, `INTERNAL`. The launcher adds `TIMEOUT`, `NO_RESULT` and `INVALID_RESULT`, `CANCELLED` on Ctrl+C, and `STARTUP_FAILED` when the executable cannot start. When the app reported its own error message key, the result has `error.appError`.
 
 ## Isolation
 

@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 RESULT_SCHEMA = "mineimator.result/1"
@@ -20,9 +21,11 @@ EXIT_USAGE = 1
 EXIT_JOB_ERROR = 2
 EXIT_TIMEOUT = 3
 EXIT_APP_FAILED = 4
+EXIT_CANCELLED = 130
 
 APP_REFUSED = 3
 LOG_TAIL_LINES = 40
+POLL_SECONDS = 0.25
 
 
 def _error_result(code, message, job_id=None):
@@ -51,6 +54,15 @@ def _tail(path, lines=LOG_TAIL_LINES):
             return [line.rstrip("\n") for line in f.readlines()[-lines:]]
     except OSError:
         return []
+
+
+def _valid_result(result):
+    if not isinstance(result, dict) or result.get("schema") != RESULT_SCHEMA:
+        return False
+    if result.get("status") == "ok":
+        return True
+    error = result.get("error")
+    return result.get("status") == "error" and isinstance(error, dict) and isinstance(error.get("code"), str)
 
 
 def _kill_tree(proc):
@@ -103,20 +115,29 @@ def run_job(job_path, command, timeout, keep_work=False):
             shutil.rmtree(work, ignore_errors=True)
             return EXIT_USAGE, _error_result("STARTUP_FAILED", f"Could not start {command[0]}: {e}", _job_id(job_path))
 
+        deadline = time.monotonic() + timeout
         try:
-            returncode = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
+            while True:
+                try:
+                    returncode = proc.wait(timeout=max(0.0, min(POLL_SECONDS, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        _kill_tree(proc)
+                        returncode = proc.returncode
+                        timed_out = True
+                        break
+        except BaseException:
             _kill_tree(proc)
-            returncode = proc.returncode
-            timed_out = True
+            raise
 
     result = None
     if result_path.is_file():
         try:
             with open(result_path, encoding="utf-8") as f:
                 result = json.load(f)
-            if not isinstance(result, dict) or result.get("schema") != RESULT_SCHEMA or result.get("status") not in ("ok", "error"):
-                result = _error_result("INVALID_RESULT", "The app wrote a result that is not a mineimator.result/1 object", _job_id(job_path))
+            if not _valid_result(result):
+                result = _error_result("INVALID_RESULT", "The app wrote a result that is not a valid mineimator.result/1 object", _job_id(job_path))
         except (OSError, ValueError) as e:
             result = _error_result("INVALID_RESULT", f"Could not read result: {e}", _job_id(job_path))
 
@@ -132,7 +153,7 @@ def run_job(job_path, command, timeout, keep_work=False):
         result = _error_result("NO_RESULT", message, _job_id(job_path))
     elif result["status"] == "ok":
         code = EXIT_OK
-    elif result.get("error", {}).get("code") in ("INVALID_RESULT", "FATAL"):
+    elif result["error"]["code"] in ("INVALID_RESULT", "FATAL"):
         code = EXIT_APP_FAILED
     else:
         code = EXIT_JOB_ERROR
@@ -154,12 +175,18 @@ def run_job(job_path, command, timeout, keep_work=False):
     return code, result
 
 
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="mineimator_agent.py",
         description="Build, animate, save and render Mine-imator scenes from a JSON job.",
         epilog=(
-            "Exit codes: 0 ok, 1 usage, 2 job error (see result.error), 3 timeout, 4 app failed. "
+            "Exit codes: 0 ok, 1 usage, 2 job error (see result.error), 3 timeout, 4 app failed, 130 cancelled. "
             "See Tools/agent/README.md for the job format."
         ),
     )
@@ -186,7 +213,10 @@ def main(argv=None):
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("--timeout must be finite and positive")
 
-    code, result = run_job(args.job, [str(Path(args.exe).resolve())], args.timeout, args.keep_work)
+    try:
+        code, result = run_job(args.job, [str(Path(args.exe).resolve())], args.timeout, args.keep_work)
+    except KeyboardInterrupt:
+        code, result = EXIT_CANCELLED, _error_result("CANCELLED", "Cancelled; the app was stopped", _job_id(args.job))
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return code

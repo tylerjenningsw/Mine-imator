@@ -1,5 +1,7 @@
+import _thread
 import contextlib
 import io
+import threading
 import json
 import os
 import struct
@@ -107,6 +109,34 @@ class LauncherTest(unittest.TestCase):
             time.sleep(0.1)
         self.assertFalse(pid_alive(child))
 
+    def test_interrupt_stops_the_app_and_its_children(self):
+        child_file = Path(self.dir.name) / "child.pid"
+        app_file = Path(self.dir.name) / "app.pid"
+        job = self.job("hang-with-child", childPidFile=str(child_file), appPidFile=str(app_file))
+
+        def interrupt_when_started():
+            for _ in range(100):
+                if child_file.exists() and app_file.exists():
+                    break
+                time.sleep(0.1)
+            _thread.interrupt_main()
+
+        threading.Thread(target=interrupt_when_started, daemon=True).start()
+        start = time.monotonic()
+        with self.assertRaises(KeyboardInterrupt):
+            agent.run_job(job, FAKE_APP, 60)
+        self.assertLess(time.monotonic() - start, 30)
+        for pid in (int(app_file.read_text()), int(child_file.read_text())):
+            self.assertFalse(pid_alive(pid), pid)
+
+    def test_malformed_error_object_is_an_invalid_result(self):
+        for shape in ("null", "list", "number", "string", "no-code"):
+            with self.subTest(shape=shape):
+                code, result = self.run_mode("bad-error-" + shape)
+                self.assertEqual(code, agent.EXIT_APP_FAILED)
+                self.assertEqual(result["error"]["code"], "INVALID_RESULT")
+                self.assertIn("logTail", result["launcher"])
+
     def test_result_written_before_a_hang_is_kept(self):
         code, result = self.run_mode("hang-after-result", timeout=3)
         self.assertEqual(code, agent.EXIT_OK)
@@ -142,7 +172,7 @@ class CliTest(unittest.TestCase):
     def test_run_requires_an_existing_executable(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
             agent.main(["run", "job.json", "--exe", "definitely-missing.exe"])
-        self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(raised.exception.code, agent.EXIT_USAGE)
 
     def test_help_mentions_exit_codes(self):
         out = io.StringIO()
@@ -155,7 +185,12 @@ class CliTest(unittest.TestCase):
             with self.subTest(timeout=timeout):
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
                     agent.main(["run", "job.json", "--exe", sys.executable, "--timeout", timeout])
-                self.assertEqual(raised.exception.code, 2)
+                self.assertEqual(raised.exception.code, agent.EXIT_USAGE)
+
+    def test_missing_arguments_are_usage_errors(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            agent.main(["run"])
+        self.assertEqual(raised.exception.code, agent.EXIT_USAGE)
 
 
 class PngDecodeTest(unittest.TestCase):

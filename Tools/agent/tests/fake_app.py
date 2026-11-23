@@ -29,6 +29,9 @@ if mode == "ok":
     write_result("ok")
 elif mode == "job-error":
     write_result("error", {"error": {"code": "ASSET_NOT_FOUND", "message": "Unknown asset", "step": 1}})
+elif mode.startswith("bad-error-"):
+    shapes = {"null": None, "list": [], "number": 42, "string": "oops", "no-code": {"message": "x"}}
+    write_result("error", {"error": shapes[mode[len("bad-error-"):]]})
 elif mode == "fatal":
     write_result("error", {"error": {"code": "FATAL", "message": "boom", "step": None}})
 elif mode == "garbage":
@@ -51,4 +54,7 @@ elif mode == "hang-with-child":
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     with open(job["childPidFile"], "w", encoding="utf-8") as f:
         f.write(str(child.pid))
+    if "appPidFile" in job:
+        with open(job["appPidFile"], "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
     time.sleep(60)
