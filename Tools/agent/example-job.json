@@ -1,0 +1,27 @@
+{
+	"schema": "mineimator.job/1",
+	"id": "walk-demo",
+	"outputDirectory": "walk-demo-output",
+	"overwrite": false,
+	"project": { "mode": "new", "name": "Walk demo", "tempo": 24, "width": 640, "height": 360, "seed": 42 },
+	"steps": [
+		{ "op": "catalog", "kind": "characters", "query": "human", "limit": 5 },
+		{ "op": "catalog", "kind": "parts", "asset": "human" },
+		{ "op": "create", "id": "floor", "kind": "block", "asset": "grass_block" },
+		{ "op": "create", "id": "actor", "kind": "character", "asset": "human" },
+		{ "op": "create", "id": "lamp", "kind": "point_light" },
+		{ "op": "create", "id": "cam", "kind": "camera" },
+		{ "op": "keyframe.set", "target": "floor", "frame": 0, "values": { "POS_Z": -16, "SCA_X": 4, "SCA_Y": 4 } },
+		{ "op": "keyframe.set", "target": "actor", "frame": 0, "values": { "POS_X": -24 }, "transition": "linear" },
+		{ "op": "keyframe.set", "target": "actor", "frame": 24, "values": { "POS_X": 24 } },
+		{ "op": "keyframe.set", "target": "actor/right_arm", "frame": 0, "values": { "ROT_X": -30 } },
+		{ "op": "keyframe.set", "target": "actor/right_arm", "frame": 12, "values": { "ROT_X": 30 } },
+		{ "op": "keyframe.set", "target": "actor/right_arm", "frame": 24, "values": { "ROT_X": -30 } },
+		{ "op": "keyframe.set", "target": "lamp", "frame": 0, "values": { "POS_Z": 64, "LIGHT_RANGE": 250 } },
+		{ "op": "keyframe.set", "target": "cam", "frame": 0, "values": { "POS_Z": 16, "CAM_ROTATE": true, "CAM_ROTATE_DISTANCE": 110, "CAM_ROTATE_ANGLE_XY": 30, "CAM_ROTATE_ANGLE_Z": 15, "CAM_FOV": 50 } },
+		{ "op": "inspect", "frame": 12 },
+		{ "op": "save", "path": "walk-demo.miproject" },
+		{ "op": "render.image", "camera": "cam", "frame": 12, "path": "preview.png" },
+		{ "op": "render.sequence", "camera": "cam", "start": 0, "count": 13, "fps": 12, "path": "frames" }
+	]
+}
