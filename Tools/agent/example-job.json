@@ -18,7 +18,7 @@
 		{ "op": "keyframe.set", "target": "actor/right_arm", "frame": 12, "values": { "ROT_X": 30 } },
 		{ "op": "keyframe.set", "target": "actor/right_arm", "frame": 24, "values": { "ROT_X": -30 } },
 		{ "op": "keyframe.set", "target": "lamp", "frame": 0, "values": { "POS_Z": 64, "LIGHT_RANGE": 250 } },
-		{ "op": "keyframe.set", "target": "cam", "frame": 0, "values": { "POS_Z": 16, "CAM_ROTATE": true, "CAM_ROTATE_DISTANCE": 110, "CAM_ROTATE_ANGLE_XY": 30, "CAM_ROTATE_ANGLE_Z": 15, "CAM_FOV": 50 } },
+		{ "op": "keyframe.set", "target": "cam", "frame": 0, "values": { "POS_X": 0, "POS_Y": 0, "POS_Z": 16, "ROT_X": 15, "ROT_Y": 0, "ROT_Z": 30, "CAM_ROTATE": true, "CAM_ROTATE_DISTANCE": 110, "CAM_ROTATE_ANGLE_XY": 30, "CAM_ROTATE_ANGLE_Z": 15, "CAM_FOV": 50 } },
 		{ "op": "inspect", "frame": 12 },
 		{ "op": "save", "path": "walk-demo.miproject" },
 		{ "op": "render.image", "camera": "cam", "frame": 12, "path": "preview.png" },

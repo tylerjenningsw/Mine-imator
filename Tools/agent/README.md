@@ -67,6 +67,8 @@ The app stores the id as the timeline name. When a job opens a project, every ro
 
 `values` uses native value names. `catalog` with `kind: "values"` lists each name, its type and the kinds that accept it: positions, rotations, scales, part bends, `ALPHA`, `VISIBLE`, camera field of view and orbit (`CAM_ROTATE*`), and point light strength and range. Positions are in Mine-imator units (16 per block) with Z up. Angles are in degrees.
 
+A new camera starts at the editor's work camera, so set its position and rotation explicitly. `CAM_ROTATE` orbits the camera around its position but does not turn it. To look at the orbit center, set `ROT_X` to `CAM_ROTATE_ANGLE_Z` and `ROT_Z` to `CAM_ROTATE_ANGLE_XY`, as the editor's "look at rotation point" option does.
+
 ### Rendering
 
 Renders use shaded quality, the camera you name and that camera's size settings, or the project size. `render.sequence` writes `count` files `frame_000000.png` and up. File `i` shows timeline frame `start + i * tempo / fps`, which the artifact lists per file. Trial installs keep the watermark. Artifacts report `watermark`.
