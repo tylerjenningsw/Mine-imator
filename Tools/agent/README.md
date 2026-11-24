@@ -1,6 +1,6 @@
 # Mine-imator agent CLI
 
-Build, animate, save and render a Mine-imator scene from one JSON job file. Mine-imator runs the job with its own scene, keyframe, project and render routines. `mineimator_agent.py` starts one isolated app process per job, stops it on timeout and prints the result JSON.
+Build, animate, save and render a Mine-imator scene from one JSON job file. Mine-imator runs the job with its own scene, keyframe, project and render routines. `mineimator_agent.py` starts one isolated app process per job, stops it on timeout and prints the result JSON. It can also edit the scene in a window you have open, see [Edit an open scene](#edit-an-open-scene).
 
 Requires Python 3.8 or later and a built Mine-imator executable with its `Data` folder. No other packages.
 
@@ -94,13 +94,53 @@ The app refuses to start (exit code 3) when the result file or its work director
 
 Replays are compared by `inspect` output for the same job, app version, assets and seed, not by project bytes or pixels.
 
+## Edit an open scene
+
+Live editing lets an agent read and change the scene in a Mine-imator window you are working in, including unsaved changes.
+
+1. Open your project. `Mine-imator.exe path/to/project.miproject` also opens it at startup.
+2. Choose **Edit > Allow agent editing**. The window writes a session file and shows a notice. Choose it again to turn it off.
+3. Run the `live` commands:
+
+```
+python Tools/agent/mineimator_agent.py live sessions
+python Tools/agent/mineimator_agent.py live inspect [--frame 24] [--selected]
+python Tools/agent/mineimator_agent.py live apply patch.json
+```
+
+`inspect` returns every object and part with its `ref`, display `name`, `type`, `parent`, `partOf`, `part`, `selected`, `locked`, the values it can edit (`editable`), its evaluated `values` and its keyframes. `--frame` evaluates another frame. Your playhead and selection stay where they were.
+
+A patch is one JSON object:
+
+```json
+{
+	"documentGeneration": 3,
+	"expectedRevision": 41,
+	"label": "raise arm",
+	"requestId": "raise-arm-1",
+	"operations": [
+		{ "op": "keyframe.set", "target": "<ref from inspect>", "frame": 24, "values": { "ROT_X": -30 }, "transition": "easeinoutquad" }
+	]
+}
+```
+
+- Copy `documentGeneration` and `revision` from the `inspect` you planned from. The revision advances on every edit, undo, redo and mouse or text interaction in the window. A stale patch fails with `REVISION_CONFLICT` and changes nothing. Inspect again and rebuild it. `DOCUMENT_CHANGED` means another project was opened or created.
+- The window applies the whole patch between your own actions, or none of it. A successful patch is one **Undo** step and shows a notice with its `label`.
+- The window waits while you drag, type, have a menu or popup open, or a project loads. A patch that waits more than 10 seconds fails with `EDITOR_BUSY`.
+- `keyframe.set` updates or creates the keyframe at `frame` on objects that exist. Values follow the batch rules. Locked objects are not editable.
+- Retrying a `requestId` returns the first reply and never applies twice. The client adds a random one when the patch has none. After a `TIMEOUT` the patch may still apply, so retry with the same `requestId`.
+- Client exit codes: 0 ok, 1 usage or no session, 2 the window rejected the request (see `error.code`), 3 timeout, 4 connection failed. A timeout or disconnect never stops the editor.
+
+The window listens on `127.0.0.1` only, on a port the system picks. Every request carries the session token from the session file, which is in `%LOCALAPPDATA%\Mine-imator\live` (Linux `~/.local/share/Mine-imator/live`, macOS `~/Library/Application Support/Mine-imator/live`, or `MINEIMATOR_LIVE_DIR`). Any program running as you can read that file, so turn agent editing off when you do not need it. `MINEIMATOR_LIVE_SESSION=1` turns it on at startup.
+
 ## Not supported yet
 
-Movie export, high-quality renders, world import, custom skins, packs and models, scenery, particles, audio, and a persistent session or MCP server.
+Movie export, high-quality renders, world import, custom skins, packs and models, scenery, particles, audio, and an MCP server. Live editing does not create or delete objects, render previews or save.
 
 ## Checks
 
 - `python -m unittest discover -s Tools/agent/tests` runs the launcher tests with a stand-in app.
 - `python Tools/agent/tests/integration_check.py --exe path/to/Mine-imator.exe` runs real jobs against a built app and checks results, the project round trip and decoded PNGs.
+- `python Tools/agent/tests/live_check.py --exe path/to/Mine-imator.exe` opens a copy of the app on Windows and checks live inspect, patches, conflicts, undo and redo with real keyboard and mouse input. Leave the mouse and keyboard alone while it runs.
 
 The integration check keeps its jobs, results and PNGs in the printed directory for visual inspection.
