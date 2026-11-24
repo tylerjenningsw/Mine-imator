@@ -64,7 +64,8 @@ function live_set(enable)
 
 function live_ready()
 {
-	return (window_state = "" && window_busy = "" && !textbox_isediting && popup = null && !mouse_left && ds_priority_size(load_queue) = 0)
+	return (window_state = "" && window_busy = "" && !textbox_isediting && popup = null && !mouse_left &&
+			!keyboard_check(vk_anykey) && !keyboard_check_pressed(vk_anykey) && ds_priority_size(load_queue) = 0)
 }
 
 function live_update()
@@ -290,6 +291,8 @@ function live_check_operation(op, where, timelines)
 	var tl = timelines[?op[?"target"]];
 	if (is_undefined(tl))
 		return automation_fail("OBJECT_NOT_FOUND", "No object with ref \"" + op[?"target"] + "\" in " + where + ", inspect again")
+	if (tl.lock)
+		return automation_fail("UNSUPPORTED", "Target \"" + tl.display_name + "\" in " + where + " is locked")
 
 	if (is_string(op[?"transition"]) && ds_list_find_index(transition_list, op[?"transition"]) < 0)
 		return automation_fail("INVALID_REQUEST", "Unknown transition \"" + op[?"transition"] + "\" in " + where + ", see hello")

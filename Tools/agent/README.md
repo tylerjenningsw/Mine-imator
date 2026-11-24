@@ -124,7 +124,7 @@ A patch is one JSON object:
 }
 ```
 
-- Copy `documentGeneration` and `revision` from the `inspect` you planned from. The revision advances on every edit, undo, redo and mouse or text interaction in the window. A stale patch fails with `REVISION_CONFLICT` and changes nothing. Inspect again and rebuild it. `DOCUMENT_CHANGED` means another project was opened or created.
+- Copy `documentGeneration` and `revision` from the `inspect` you planned from. The revision advances on every edit, undo, redo and mouse, keyboard or text interaction in the window. A stale patch fails with `REVISION_CONFLICT` and changes nothing. Inspect again and rebuild it. `DOCUMENT_CHANGED` means another project was opened or created.
 - The window applies the whole patch between your own actions, or none of it. A successful patch is one **Undo** step and shows a notice with its `label`.
 - The window waits while you drag, type, have a menu or popup open, or a project loads. A patch that waits more than 10 seconds fails with `EDITOR_BUSY`.
 - `keyframe.set` updates or creates the keyframe at `frame` on objects that exist. Values follow the batch rules. Locked objects are not editable.
