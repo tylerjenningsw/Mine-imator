@@ -4,6 +4,7 @@ import io
 import threading
 import json
 import os
+import socket
 import struct
 import subprocess
 import sys
@@ -194,6 +195,117 @@ class CliTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
             agent.main(["run"])
         self.assertEqual(raised.exception.code, agent.EXIT_USAGE)
+
+
+class FakeEditor:
+    def __init__(self, reply):
+        self.reply = reply
+        self.received = []
+        self.server = socket.create_server(("127.0.0.1", 0))
+        self.port = self.server.getsockname()[1]
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+                if not data:
+                    continue
+                self.received.append(json.loads(data))
+                if self.reply is not None:
+                    conn.sendall(self.reply(self.received[-1]))
+                else:
+                    time.sleep(3)
+
+    def close(self):
+        self.server.close()
+
+    def session(self, session_id="s1"):
+        return {"schema": agent.LIVE_SESSION_SCHEMA, "sessionId": session_id, "host": "127.0.0.1", "port": self.port, "token": "secret", "started": session_id}
+
+
+def ok_reply(request):
+    return json.dumps({"schema": agent.LIVE_SCHEMA, "status": "ok", "requestId": request.get("requestId")}).encode() + b"\n"
+
+
+class LiveClientTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        os.environ["MINEIMATOR_LIVE_DIR"] = self.dir.name
+        self.addCleanup(os.environ.pop, "MINEIMATOR_LIVE_DIR")
+
+    def editor(self, reply=ok_reply, session_id="s1"):
+        editor = FakeEditor(reply)
+        self.addCleanup(editor.close)
+        Path(self.dir.name, f"{session_id}.json").write_text(json.dumps(editor.session(session_id)), encoding="utf-8")
+        return editor
+
+    def live(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = agent.main(["live", *argv])
+        return code, json.loads(out.getvalue())
+
+    def test_request_carries_token_and_apply_gets_a_request_id(self):
+        editor = self.editor()
+        patch = Path(self.dir.name, "patch.txt")
+        patch.write_text(json.dumps({"documentGeneration": 1, "expectedRevision": 2, "operations": []}), encoding="utf-8")
+        code, reply = self.live("apply", str(patch))
+        self.assertEqual(code, agent.EXIT_OK)
+        sent = editor.received[-1]
+        self.assertEqual((sent["op"], sent["token"]), ("apply", "secret"))
+        self.assertTrue(sent["requestId"])
+        self.assertEqual(reply["requestId"], sent["requestId"])
+
+    def test_sessions_skip_stale_files_and_hide_tokens(self):
+        self.editor()
+        closed = socket.create_server(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+        closed.close()
+        stale = {"schema": agent.LIVE_SESSION_SCHEMA, "sessionId": "stale", "host": "127.0.0.1", "port": port, "token": "x"}
+        Path(self.dir.name, "stale.json").write_text(json.dumps(stale), encoding="utf-8")
+        code, reply = self.live("sessions")
+        self.assertEqual(code, agent.EXIT_OK)
+        self.assertEqual([s["sessionId"] for s in reply["sessions"]], ["s1"])
+        self.assertNotIn("token", reply["sessions"][0])
+
+    def test_no_session_and_several_sessions_are_usage_errors(self):
+        code, reply = self.live("hello")
+        self.assertEqual((code, reply["error"]["code"]), (agent.EXIT_USAGE, "NO_SESSION"))
+        self.editor(session_id="a")
+        self.editor(session_id="b")
+        code, reply = self.live("hello")
+        self.assertEqual((code, reply["error"]["code"]), (agent.EXIT_USAGE, "SESSION_AMBIGUOUS"))
+        code, reply = self.live("hello", "--session", "b")
+        self.assertEqual(code, agent.EXIT_OK)
+
+    def test_editor_error_is_a_request_error(self):
+        self.editor(lambda r: json.dumps({"schema": agent.LIVE_SCHEMA, "status": "error", "error": {"code": "REVISION_CONFLICT", "message": "x"}}).encode() + b"\n")
+        code, reply = self.live("inspect", "--frame", "3")
+        self.assertEqual((code, reply["error"]["code"]), (agent.EXIT_JOB_ERROR, "REVISION_CONFLICT"))
+
+    def test_timeout_stops_waiting_without_touching_the_editor(self):
+        editor = self.editor(reply=None)
+        start = time.monotonic()
+        code, reply = agent.live_request(editor.session(), {"op": "apply", "requestId": "r1"}, 0.5)
+        self.assertLess(time.monotonic() - start, 3)
+        self.assertEqual((code, reply["error"]["code"]), (agent.EXIT_TIMEOUT, "TIMEOUT"))
+        self.assertIn("r1", reply["error"]["message"])
+
+    def test_foreign_reply_is_invalid(self):
+        editor = self.editor(lambda r: b"{\"hello\": 1}\n")
+        code, reply = agent.live_request(editor.session(), {"op": "hello"}, 5)
+        self.assertEqual((code, reply["error"]["code"]), (agent.EXIT_APP_FAILED, "INVALID_RESULT"))
 
 
 class PngDecodeTest(unittest.TestCase):
