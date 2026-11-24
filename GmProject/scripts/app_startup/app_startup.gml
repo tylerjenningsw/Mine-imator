@@ -3,6 +3,8 @@
 function app_startup()
 {
 	startup_error = true
+	automation_startup()
+	live_startup()
 	
 	if (!lib_startup())
 		return false

@@ -27,7 +27,7 @@ function app_startup_interface()
 	background_sky_startup()
 		
 	// Start server request for new assets
-	http_assets = http_get(link_assets_versions)
+	http_assets = (automation_active ? null : http_get(link_assets_versions))
 	
 	// Shortcut to a new project
 	if (dev_mode)
@@ -64,7 +64,12 @@ function app_startup_interface()
 		project_reset()
 		
 		// First start
-		if (!file_exists_lib(settings_file))
+		if (!file_exists_lib(settings_file) && !automation_active)
 			popup_show(popup_welcome)
+		else if (!automation_active && app_startup_file() != "")
+		{
+			project_load(app_startup_file())
+			window_state = ""
+		}
 	}
 }

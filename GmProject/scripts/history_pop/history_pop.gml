@@ -4,6 +4,7 @@
 function history_pop()
 {
 	project_changed = true
+	live_revision++
 	action_tl_play_break()
 	
 	if (history_pos > 0)

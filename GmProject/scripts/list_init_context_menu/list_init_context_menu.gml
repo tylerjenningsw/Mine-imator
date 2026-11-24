@@ -305,6 +305,9 @@ function list_init_context_menu(name)
 			
 			list_item_add(text_get("toolbareditpreferences"), settings, "", null, icons.SETTINGS, null, settings.show ? tab_close : tab_show, true)
 			list_item_last.toggled = settings.show
+
+			list_item_add(text_get("toolbareditagentediting"), null, "", null, icons.CODE, null, action_live_toggle, true)
+			list_item_last.toggled = live_active
 			
 			break
 		}

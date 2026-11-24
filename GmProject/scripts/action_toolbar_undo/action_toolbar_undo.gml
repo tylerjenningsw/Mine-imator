@@ -27,6 +27,7 @@ function action_toolbar_undo()
 	history_undo = false
 	
 	history_pos++
+	live_revision++
 	
 	history_resource_update = true
 	render_samples = -1

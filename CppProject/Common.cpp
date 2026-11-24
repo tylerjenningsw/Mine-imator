@@ -1,4 +1,5 @@
 #include "Common.hpp"
+#include "Automation.hpp"
 
 namespace CppProject
 {
@@ -13,6 +14,8 @@ namespace CppProject
 	#else
 		QString logFile = QDir::homePath() + "/Mine-imator/log.txt";
 	#endif
+		if (Automation::Active())
+			logFile = Automation::LogFile();
 		QFile file(logFile);
 		AddPerms(file);
 		if (!file.open(QFile::Append))

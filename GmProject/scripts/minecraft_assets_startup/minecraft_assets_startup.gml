@@ -13,7 +13,7 @@ function minecraft_assets_startup()
 	block_objs[0] = null
 	
 	// New assets found
-	if (setting_minecraft_assets_new_version != "")
+	if (setting_minecraft_assets_new_version != "" && !automation_active)
 	{
 		new_assets_version = setting_minecraft_assets_new_version
 		new_assets_format = setting_minecraft_assets_new_format

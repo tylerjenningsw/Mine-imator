@@ -321,6 +321,11 @@
 		"download": "Download",
 		"view": "View",
 		"rendersaved": "Render settings saved successfully!",
+		"agenteditingon": "Agent editing is on. Agents on this computer can read and edit this scene.",
+		"agenteditingoff": "Agent editing is off.",
+		"agenteditingfailed": "Agent editing could not start. See the log for details.",
+		"agentedit": "Agent: %1. Undo with %2.",
+		"agenteditdefault": "edited keyframes",
 		"close": "Close"
 	},
 	"error/": {
@@ -474,7 +479,8 @@
 			"delete": "Delete timeline",
 			"hide": "Hide timeline",
 			"showhidden": "Show hidden",
-			"preferences": "Preferences..."
+			"preferences": "Preferences...",
+			"agentediting": "Allow agent editing"
 		},
 		"render": "Render",
 		"render/": {

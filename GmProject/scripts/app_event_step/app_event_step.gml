@@ -32,12 +32,22 @@ function app_event_step()
 		if (window_state = "load_assets")
 			return 0
 		
+		if (automation_active)
+		{
+			automation_update()
+			return 0
+		}
+
 		if (window_state = "new_assets" || window_state = "export_movie" || window_state = "export_image")
 			return 0
 		
+		if (live_active && (keyboard_check(vk_anykey) || keyboard_check_pressed(vk_anykey)))
+			live_busy_seen = true
+
 		app_update_place()
 		app_update_keybinds()
 		app_update_keyboard()
+		live_update()
 		app_update_play()
 		app_update_animate()
 		app_update_previews()

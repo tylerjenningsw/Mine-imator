@@ -10,5 +10,5 @@ function toasts_startup()
 	toast_mouseon = false
 	toast_last = null
 	
-	http_alert_news = http_get(link_news)
+	http_alert_news = (automation_active ? null : http_get(link_news))
 }
