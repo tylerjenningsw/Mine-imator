@@ -158,17 +158,72 @@ def build_project(exe, root):
     steps = [
         {"op": "create", "id": "actor", "kind": "character", "asset": "human"},
         {"op": "create", "id": "box", "kind": "cube"},
+        {"op": "create", "id": "locked", "kind": "cube"},
         {"op": "create", "id": "cam", "kind": "camera"},
         {"op": "keyframe.set", "target": "box", "frame": 0, "values": {"POS_X": 0, "POS_Z": 8}, "transition": "linear"},
         {"op": "keyframe.set", "target": "box", "frame": 24, "values": {"POS_X": 48}, "transition": "linear"},
+        {"op": "keyframe.set", "target": "locked", "frame": 0, "values": {"POS_Z": 8}, "transition": "linear"},
         {"op": "save", "path": "scene.miproject"},
     ]
     code, result = run(exe, root, "live-scene", steps)
     if not check("batch job builds the test project", code == agent.EXIT_OK, result.get("error")):
         return None
+    scene_file = root / "live-scene" / "scene.miproject"
+    scene = json.loads(scene_file.read_text(encoding="utf-8"))
+    next(t for t in scene["timelines"] if t["name"] == "locked")["lock"] = True
+    scene_file.write_text(json.dumps(scene), encoding="utf-8")
     other = run(exe, root, "live-other", [{"op": "create", "id": "solo", "kind": "cube"}, {"op": "save", "path": "other.miproject"}])
     check("batch job builds a second project", other[0] == agent.EXIT_OK, other[1].get("error"))
     return root / "live-scene" / "scene.miproject", root / "live-other" / "other.miproject"
+
+
+def check_review_regressions(live, pid):
+    if not check("editor takes focus for keyboard regressions", focus(pid)):
+        return
+
+    before = live.inspect()
+    box = by_name(before, "box")
+    send(key(0x27), key(0x27, True))
+    time.sleep(0.3)
+    moved = live.inspect()
+    check("arrow key moves the playhead", moved["project"]["frame"] != before["project"]["frame"])
+    check("arrow key advances the revision", moved["revision"] > before["revision"], (before["revision"], moved["revision"]))
+    code, stale = live.apply(before, [{"op": "keyframe.set", "target": box["ref"], "frame": 70, "values": {"POS_Y": 1}}])
+    check("patch planned before arrow input is rejected", code == agent.EXIT_JOB_ERROR and stale.get("error", {}).get("code") == "REVISION_CONFLICT", stale)
+    check("arrow-invalidated patch changes nothing", keyframe(by_name(live.inspect(), "box"), 70) is None)
+
+    before = live.inspect()
+    code, baseline = live.apply(before, [{"op": "keyframe.set", "target": box["ref"], "frame": 71, "values": {"POS_Y": 2}}])
+    if check("undo race has a prior edit", code == agent.EXIT_OK, baseline):
+        before = live.inspect()
+        send(key(VK_CONTROL))
+        try:
+            pending = live.background({"op": "apply", "documentGeneration": before["documentGeneration"], "expectedRevision": before["revision"],
+                                       "operations": [{"op": "keyframe.set", "target": box["ref"], "frame": 72, "values": {"POS_Y": 3}}]})
+            time.sleep(0.3)
+            check("patch waits while a keyboard shortcut is pending", pending[0].is_alive())
+            send(key(ord("Z")), key(ord("Z"), True))
+        finally:
+            send(key(VK_CONTROL, True))
+        pending[0].join(15)
+        code, rejected = pending[1].get("result", (None, {}))
+        check("Undo input invalidates the queued patch", code == agent.EXIT_JOB_ERROR and rejected.get("error", {}).get("code") == "REVISION_CONFLICT", rejected)
+        after = live.inspect()
+        check("Undo reverses the prior edit rather than the agent's pending patch", keyframe(by_name(after, "box"), 71) is None)
+        check("patch queued alongside Undo creates no keyframe", keyframe(by_name(after, "box"), 72) is None)
+
+    for frame in (0, 12):
+        before = live.inspect()
+        locked = by_name(before, "locked")
+        check("transition test target is locked", locked["locked"])
+        code, rejected = live.apply(before, [
+            {"op": "keyframe.set", "target": box["ref"], "frame": 73 + frame, "values": {"POS_Y": 4}},
+            {"op": "keyframe.set", "target": locked["ref"], "frame": frame, "values": {}, "transition": "easeinoutquad"},
+        ])
+        check(f"locked transition at frame {frame} rejects the entire patch", code == agent.EXIT_JOB_ERROR and rejected.get("error", {}).get("code") == "UNSUPPORTED", rejected)
+        after = live.inspect()
+        check(f"locked transition at frame {frame} preserves keys and revision", by_name(after, "locked")["keyframes"] == locked["keyframes"] and after["revision"] == before["revision"])
+        check(f"locked transition at frame {frame} does not apply an earlier operation", keyframe(by_name(after, "box"), 73 + frame) is None)
 
 
 def wait_for_session(live_dir, project_name, timeout=120):
@@ -280,6 +335,8 @@ def check_live(live, pid, scene_file, other_file):
     code, busy = state[1].get("result", (None, {}))
     check("a request that waits more than 10 seconds gets EDITOR_BUSY", code == agent.EXIT_JOB_ERROR and busy["error"]["code"] == "EDITOR_BUSY", busy)
     check("the editor keeps running after a client timeout", live.ok({"op": "hello"})["status"] == "ok")
+
+    check_review_regressions(live, pid)
 
     current = live.inspect()
     chord("s")
