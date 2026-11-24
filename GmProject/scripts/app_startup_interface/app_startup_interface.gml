@@ -66,5 +66,10 @@ function app_startup_interface()
 		// First start
 		if (!file_exists_lib(settings_file) && !automation_active)
 			popup_show(popup_welcome)
+		else if (!automation_active && app_startup_file() != "")
+		{
+			project_load(app_startup_file())
+			window_state = ""
+		}
 	}
 }

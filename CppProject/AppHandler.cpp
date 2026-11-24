@@ -594,3 +594,18 @@ namespace CppProject
 		app_event_http(ScopeAny(global::_app->id));
 	}
 }
+
+namespace CppProject
+{
+	StringType app_startup_file()
+	{
+		QStringList args = QCoreApplication::arguments();
+		for (int i = 1; i < args.size(); i++)
+		{
+			QFileInfo info(args[i]);
+			if (info.suffix().compare("miproject", Qt::CaseInsensitive) == 0 && info.isFile())
+				return QDir::fromNativeSeparators(info.absoluteFilePath());
+		}
+		return "";
+	}
+}
