@@ -6,6 +6,7 @@ function project_reset()
 	
 	project_reset_backup()
 	history_clear()
+	live_generation++
 	
 	temp_edit = null
 	res_edit = null

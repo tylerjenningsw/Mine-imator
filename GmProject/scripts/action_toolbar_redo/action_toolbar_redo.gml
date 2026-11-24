@@ -27,6 +27,7 @@ function action_toolbar_redo()
 		script_execute(history_data.script)
 	
 	history_redo = false
+	live_revision++
 	
 	history_resource_update = true
 	render_samples = -1
